@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kids Creative Studio</title>
+    <title>Kids Creative Studio (AI Math Solver)</title>
     <!-- Load Tailwind CSS for modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Load Font Awesome for tool icons -->
@@ -20,6 +20,8 @@
             background-color: #ffffff;
             box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2); /* Deeper shadow */
             cursor: crosshair;
+            max-width: 100%;
+            height: auto;
         }
         .control-button {
             padding: 0.75rem 1.5rem;
@@ -64,19 +66,50 @@
             border-color: #3b82f6;
             box-shadow: 0 0 0 2px white;
         }
+        #solve-button {
+            background-color: #10b981; /* Green */
+            color: white;
+            font-size: 1.125rem;
+            box-shadow: 0 6px #059669; /* Darker green shadow */
+        }
+        #solve-button:active {
+            box-shadow: 0 2px #059669;
+            transform: translateY(4px);
+        }
     </style>
 </head>
 <body class="p-4 sm:p-8 flex flex-col items-center min-h-screen">
 
     <header class="text-center mb-8">
         <h1 class="text-5xl font-extrabold text-pink-600 mb-2">Creative Studio</h1>
-        <p class="text-xl text-gray-700">Design your world with Pro Tools!</p>
+        <p class="text-xl text-gray-700">Draw, Color, and Solve Math Problems!</p>
     </header>
 
-    <div class="w-full max-w-2xl">
+    <!-- Canvas Wrapper -->
+    <div class="w-full max-w-4xl flex flex-col items-center">
+        <!-- Size Controls -->
+        <div class="flex flex-wrap justify-center gap-4 mb-4 text-gray-700 font-semibold w-full">
+            <button onclick="changeCanvasSize(-1)" class="px-4 py-2 bg-yellow-400 text-gray-800 rounded-lg hover:bg-yellow-500 transition shadow-md">
+                <i class="fas fa-search-minus mr-1"></i> Smaller
+            </button>
+            <span id="canvas-size-display" class="text-xl flex items-center bg-white px-4 rounded-lg shadow-inner border border-gray-200">
+                Canvas Size: 600 x 600
+            </span>
+            <button onclick="changeCanvasSize(1)" class="px-4 py-2 bg-yellow-400 text-gray-800 rounded-lg hover:bg-yellow-500 transition shadow-md">
+                Larger <i class="fas fa-search-plus ml-1"></i>
+            </button>
+        </div>
         <canvas id="drawingCanvas" width="600" height="600"></canvas>
+        
+        <!-- AI Math Solver Button -->
+        <div class="mt-6 w-full max-w-lg">
+             <button id="solve-button" onclick="solveHandwrittenMath()" class="w-full control-button disabled:opacity-50">
+                <i class="fas fa-brain mr-2"></i> Solve Handwritten Math
+            </button>
+        </div>
     </div>
 
+    <!-- Controls -->
     <div id="controls" class="mt-8 p-6 bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
         
         <!-- Undo/Redo and Action Buttons -->
@@ -163,27 +196,37 @@
     </div>
 
 <script>
-    // --- Global Configuration ---
+    // ------------------------------------------------------------------
+    // यहाँ (नीचे दी गई लाइन में) आपको अपनी Gemini API Key डालनी है।
+    // कृपया "YOUR_API_KEY_HERE" को हटाकर अपनी असली Key पेस्ट करें।
+    // ------------------------------------------------------------------
+    const API_KEY = "AIzaSyAqzTp65Q8-zyOWDsDuzLUlWnzK2LUThgM"; 
+
     const CANVAS_BACKGROUND = '#ffffff'; 
     const DEFAULT_COLOR = '#3b82f6';
 
     const TOOL_SETTINGS = {
-        // LineCap/LineJoin provide different visual strokes
         'pen': { size: 3, lineCap: 'butt', lineJoin: 'bevel' },
         'pencil': { size: 1, lineCap: 'round', lineJoin: 'round' },
         'brush': { size: 18, lineCap: 'round', lineJoin: 'round' },
         'eraser': { size: 25, lineCap: 'round', lineJoin: 'round' }
     };
+    
+    const CANVAS_SIZES = [
+        { size: 400, display: "Small" },
+        { size: 600, display: "Medium" },
+        { size: 800, display: "Large" }
+    ];
 
-    // --- State Variables ---
+    // --- State Variables (Drawing) ---
     let isDrawing = false;
     let lastX = 0;
     let lastY = 0;
     let currentTool = 'pen';
     let currentStrokeColor = DEFAULT_COLOR; 
     let currentStrokeSize = TOOL_SETTINGS['pen'].size;
+    let currentCanvasSizeIndex = 1; // Start at Medium (600)
 
-    // History for Undo/Redo
     let history = [];
     let historyIndex = -1;
     const MAX_HISTORY_STEPS = 50;
@@ -201,19 +244,145 @@
     const redoButton = document.getElementById('redo-button');
     const toolIcons = document.querySelectorAll('.tool-icon');
     const colorSwatches = document.querySelectorAll('.color-swatch');
+    const canvasSizeDisplayEl = document.getElementById('canvas-size-display');
+    const solveButton = document.getElementById('solve-button');
 
+
+    // ------------------------------------------------------------------
+    // --- AI MATH SOLVER LOGIC (API Call) ---
+    // ------------------------------------------------------------------
+
+    // Utility function for exponential backoff retry logic
+    async function fetchWithRetry(url, options, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(url, options);
+                // 429 is "Too Many Requests" (throttle), we retry these
+                if (response.status !== 429) { 
+                    return response;
+                }
+                console.log(`Rate limit exceeded. Retrying in ${2 ** i}s...`);
+                await new Promise(resolve => setTimeout(resolve, 2 ** i * 1000));
+            } catch (error) {
+                console.error("Fetch error, retrying:", error);
+                await new Promise(resolve => setTimeout(resolve, 2 ** i * 1000));
+            }
+        }
+        throw new Error("Failed to fetch from API after multiple retries.");
+    }
+
+    // Main function to solve the handwritten math problem using Gemini
+    async function solveHandwrittenMath() {
+        if (API_KEY === "YOUR_API_KEY_HERE" || API_KEY === "") {
+             showModal("कृपया कोड में अपनी Gemini API Key डालें। यह सुविधा इंटरनेट कनेक्शन और एक वैध Key के बिना काम नहीं करेगी।");
+             return;
+        }
+
+        // 1. Disable button and show loading
+        solveButton.disabled = true;
+        solveButton.textContent = "हल किया जा रहा है... (Solving...)";
+        
+        // 2. Capture canvas image data and convert to base64
+        const dataURL = canvas.toDataURL("image/png");
+        const base64Data = dataURL.split(',')[1];
+        
+        // 3. Define the API call parameters
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+        
+        // System instruction to guide the AI's response format
+        const systemPrompt = "Analyze the handwriting in this image. It contains a simple mathematical expression (e.g., 5+3, 12 * 4). Please state the full expression recognized and its final numerical answer. Respond only with the format: 'Expression: [recognized expression] | Answer: [final numerical result]'. If no clear math is visible, say 'No math detected'.";
+
+        const payload = {
+            contents: [
+                {
+                    role: "user",
+                    parts: [
+                        { text: "Analyze this image for a math problem." },
+                        {
+                            inlineData: {
+                                mimeType: "image/png",
+                                data: base64Data
+                            }
+                        }
+                    ]
+                }
+            ],
+            systemInstruction: {
+                parts: [{ text: systemPrompt }]
+            },
+            generationConfig: {
+                maxOutputTokens: 100 
+            }
+        };
+
+        try {
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`API returned status ${response.status}`);
+            }
+
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text) {
+                let displayMessage;
+                if (text.includes("No math detected")) {
+                    displayMessage = "मुझे कोई साफ़ गणित की समस्या नहीं दिखी। कृपया बड़े और स्पष्ट अक्षर लिखने का प्रयास करें।";
+                } else {
+                    // Extract expression and answer using regex (simple parsing)
+                    const matchExpression = text.match(/Expression:\s*([^|]+)/);
+                    const matchAnswer = text.match(/Answer:\s*([^|]+)/);
+                    
+                    const recognizedExpression = matchExpression ? matchExpression[1].trim() : "अज्ञात (Unknown)";
+                    const answer = matchAnswer ? matchAnswer[1].trim() : "नहीं मिला";
+
+                    displayMessage = `मैंने पहचाना: ${recognizedExpression}। सही उत्तर है: <span class="font-extrabold text-blue-600">${answer}</span>`;
+                }
+                showModal(displayMessage);
+
+            } else {
+                showModal("क्षमा करें, AI छवि को प्रोसेस नहीं कर सका। कृपया पुनः प्रयास करें।");
+            }
+
+        } catch (error) {
+            console.error("Error solving math:", error);
+            showModal("गणित हल करते समय एक त्रुटि हुई। सुनिश्चित करें कि आपका इंटरनेट काम कर रहा है और Key वैध है।");
+        } finally {
+            // Re-enable button
+            solveButton.disabled = false;
+            solveButton.textContent = "Solve Handwritten Math";
+        }
+    }
+
+
+    // ------------------------------------------------------------------
+    // --- DRAWING LOGIC & UTILITIES (Same as before) ---
+    // ------------------------------------------------------------------
+
+    function showModal(message) {
+        // Allow HTML content in modal message
+        modalMessage.innerHTML = message;
+        modal.classList.remove('hidden');
+    }
+
+    function hideModal() {
+        modal.classList.add('hidden');
+    }
+    
     // --- History Management (Undo/Redo) ---
     
-    // Saves the current state of the canvas to the history stack
     function saveState() {
         if (historyIndex < history.length - 1) {
-            // Clear all future states if a new stroke is made
             history = history.slice(0, historyIndex + 1);
         }
 
-        // Only keep the last N steps to prevent memory overflow
         if (history.length >= MAX_HISTORY_STEPS) {
-            history.shift(); // Remove the oldest state
+            history.shift(); 
             historyIndex--;
         }
 
@@ -222,20 +391,16 @@
         updateHistoryButtons();
     }
 
-    // Restores a state from history
     function restoreState() {
         if (historyIndex >= 0 && historyIndex < history.length) {
             const img = new Image();
             img.onload = function() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                // Draw the image to scale
-                const scale = canvas.width / 600;
-                ctx.drawImage(img, 0, 0, 600 * scale, 600 * scale); 
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
                 updateHistoryButtons();
             };
             img.src = history[historyIndex];
         } else {
-             // If history is empty, clear the canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             updateHistoryButtons();
         }
@@ -260,77 +425,53 @@
         redoButton.disabled = (historyIndex >= history.length - 1);
     }
 
-
-    // --- Utility Functions ---
-
-    function showModal(message) {
-        // Modal is now only used for essential feedback, not on every tool switch
-        // modalMessage.textContent = message;
-        // modal.classList.remove('hidden');
-    }
-
-    function hideModal() {
-        modal.classList.add('hidden');
-    }
-    
     // --- Control Handlers ---
 
     function selectColor(color, element) {
-        // 1. Deselect all swatches
         colorSwatches.forEach(swatch => swatch.classList.remove('selected'));
-        // 2. Select the clicked swatch
         element.classList.add('selected');
-
-        // 3. Update the color picker input value
         colorPickerEl.value = color;
         updateStrokeColor(color);
         
-        // 4. Ensure tool is not eraser (and re-set tool if it was)
         if (currentTool === 'eraser') {
-            setTool('pen'); // Switch back to pen if color is selected
+            setTool('pen'); 
         }
     }
     
-    // Updates the size value display and the canvas context
     function updateStrokeSize(size) {
         currentStrokeSize = parseInt(size);
         sizeValueEl.textContent = currentStrokeSize;
         ctx.lineWidth = currentStrokeSize;
     }
     
-    // Updates the stroke color and the canvas context (used by color picker)
     function updateStrokeColor(color) {
         currentStrokeColor = color;
         ctx.strokeStyle = currentStrokeColor;
-        
-        // Deselect swatches if color picker is used
         colorSwatches.forEach(swatch => swatch.classList.remove('selected'));
+        const customSwatch = Array.from(colorSwatches).find(s => s.dataset.color === color);
+        if (customSwatch) {
+             customSwatch.classList.add('selected');
+        }
     }
 
-    // Main function to switch tools
     function setTool(toolName) {
         currentTool = toolName;
         const settings = TOOL_SETTINGS[toolName];
 
-        // 1. Update visual selection
         toolIcons.forEach(icon => {
             icon.classList.toggle('selected', icon.getAttribute('data-tool') === toolName);
         });
 
-        // 2. Adjust color settings based on tool
         if (toolName === 'eraser') {
-            // Eraser uses CANVAS_BACKGROUND color
             ctx.strokeStyle = CANVAS_BACKGROUND;
             colorControlEl.style.opacity = '0.5';
             colorControlEl.style.pointerEvents = 'none';
         } else {
-            // Other tools use the selected color
             ctx.strokeStyle = currentStrokeColor;
             colorControlEl.style.opacity = '1';
             colorControlEl.style.pointerEvents = 'auto';
         }
         
-        // 3. Apply specific tool settings (size, line caps)
         sizeSliderEl.value = settings.size;
         updateStrokeSize(settings.size); 
         ctx.lineCap = settings.lineCap;
@@ -338,12 +479,11 @@
     }
 
     function clearCanvas() {
-        // Clear the entire canvas and save the empty state
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         history = [];
         historyIndex = -1;
         saveState(); 
-        showModal("Canvas cleared! Time for a new masterpiece.");
+        showModal("Canvas cleared! Time for a new masterpiece or math problem.");
     }
 
     function saveDrawing() {
@@ -359,7 +499,7 @@
         showModal("Artwork saved successfully!");
     }
 
-    // --- Drawing Logic ---
+    // --- Drawing Interaction ---
 
     function draw(e) {
         if (!isDrawing) return;
@@ -378,8 +518,6 @@
         const currentX = clientX - rect.left;
         const currentY = clientY - rect.top;
 
-        // Ensure the context settings are correct for the current tool state
-        // Recalculate color in case of eraser/color picker updates
         ctx.strokeStyle = (currentTool === 'eraser') ? CANVAS_BACKGROUND : currentStrokeColor;
         ctx.lineWidth = currentStrokeSize;
 
@@ -411,40 +549,60 @@
     function stopDrawing() {
         if (isDrawing) {
             isDrawing = false;
-            // Save state only when the stroke is complete
             saveState(); 
         }
         ctx.beginPath();
     }
 
-    // --- Initialization & Resizing ---
+    // --- Resizing ---
     
-    function resizeCanvas() {
-        // Max size set to 600x600 in HTML, use it for aspect ratio calculation
-        const MAX_SIZE = 600;
-        const size = Math.min(document.body.clientWidth - 40, MAX_SIZE);
-        
-        // Save state before resizing
+    function resizeCanvas(targetSize) {
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
         const tempCtx = tempCanvas.getContext('2d');
         tempCtx.drawImage(canvas, 0, 0);
 
-        canvas.width = size;
-        canvas.height = size;
-        
-        // Restore state after resizing
-        ctx.drawImage(tempCanvas, 0, 0, size, size);
+        // Constrain size by screen width
+        const newSize = Math.min(targetSize, document.body.clientWidth - 40);
 
-        // Re-apply drawing settings
+        canvas.width = newSize;
+        canvas.height = newSize;
+        
+        ctx.drawImage(tempCanvas, 0, 0, newSize, newSize);
+
+        canvasSizeDisplayEl.textContent = `Canvas Size: ${targetSize} x ${targetSize}`;
+
         setTool(currentTool); 
     }
-    window.addEventListener('resize', resizeCanvas);
     
+    function changeCanvasSize(delta) {
+        let newIndex = currentCanvasSizeIndex + delta;
+
+        newIndex = Math.max(0, Math.min(CANVAS_SIZES.length - 1, newIndex));
+
+        if (newIndex !== currentCanvasSizeIndex) {
+            currentCanvasSizeIndex = newIndex;
+            const targetSize = CANVAS_SIZES[currentCanvasSizeIndex].size;
+            resizeCanvas(targetSize);
+            showModal(`Drawing area changed to ${targetSize}x${targetSize} pixels!`);
+        } else {
+             if (delta < 0) {
+                 showModal(`Cannot decrease further. Min size is ${CANVAS_SIZES[0].size}x${CANVAS_SIZES[0].size}.`);
+             } else {
+                 showModal(`Cannot increase further. Max size is ${CANVAS_SIZES[CANVAS_SIZES.length - 1].size}x${CANVAS_SIZES[CANVAS_SIZES.length - 1].size}.`);
+             }
+        }
+    }
+
+    function handleWindowResize() {
+        const targetSize = CANVAS_SIZES[currentCanvasSizeIndex].size;
+        resizeCanvas(targetSize);
+    }
+
     function initializeCanvas() {
         setTool('pen'); 
-        resizeCanvas(); 
+        resizeCanvas(CANVAS_SIZES[currentCanvasSizeIndex].size); 
         saveState(); // Save the initial empty state
     }
 
@@ -457,7 +615,8 @@
     canvas.addEventListener('touchstart', setPosition);
     canvas.addEventListener('touchmove', draw);
     canvas.addEventListener('touchend', stopDrawing);
-
+    
+    window.addEventListener('resize', handleWindowResize);
     window.onload = initializeCanvas;
 </script>
 
