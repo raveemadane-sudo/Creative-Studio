@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kids Creative Studio</title>
+    <!-- Load Tailwind CSS for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Font Awesome for tool icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+        }
+        #drawingCanvas {
+            touch-action: none; /* Prevents default touch behavior like scrolling */
+            border: 4px solid #3b82f6; /* Primary Blue border */
+            border-radius: 1.5rem;
+            background-color: #ffffff;
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2); /* Deeper shadow */
+            cursor: crosshair;
+        }
+        .control-button {
+            padding: 0.75rem 1.5rem;
+            font-weight: 700;
+            border-radius: 9999px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .control-button:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        .tool-icon {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            transition: background-color 0.15s, transform 0.1s;
+            border: 2px solid transparent;
+            min-width: 60px; /* Uniform width for tools */
+        }
+        .tool-icon.selected {
+            background-color: #e0f2fe; /* Light blue background for selection */
+            border-color: #3b82f6;
+            transform: scale(1.05);
+        }
+        .color-swatch {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.1s;
+            border: 3px solid transparent;
+        }
+        .color-swatch:hover {
+            transform: scale(1.1);
+        }
+        .color-swatch.selected {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px white;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8 flex flex-col items-center min-h-screen">
+
+    <header class="text-center mb-8">
+        <h1 class="text-5xl font-extrabold text-pink-600 mb-2">Creative Studio</h1>
+        <p class="text-xl text-gray-700">Design your world with Pro Tools!</p>
+    </header>
+
+    <div class="w-full max-w-2xl">
+        <canvas id="drawingCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <div id="controls" class="mt-8 p-6 bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
+        
+        <!-- Undo/Redo and Action Buttons -->
+        <div class="flex flex-wrap justify-center gap-4 mb-6 pb-4 border-b border-gray-100">
+            <button id="undo-button" onclick="undo()" class="control-button bg-gray-400 text-white hover:bg-gray-500 disabled:opacity-50" disabled>
+                <i class="fas fa-undo mr-2"></i> Undo
+            </button>
+            <button id="redo-button" onclick="redo()" class="control-button bg-gray-400 text-white hover:bg-gray-500 disabled:opacity-50" disabled>
+                <i class="fas fa-redo mr-2"></i> Redo
+            </button>
+            <button id="clear-button" onclick="clearCanvas()" class="control-button bg-red-500 text-white hover:bg-red-600">
+                <i class="fas fa-trash mr-2"></i> Clear
+            </button>
+            <button id="save-button" onclick="saveDrawing()" class="control-button bg-blue-600 text-white hover:bg-blue-700">
+                <i class="fas fa-download mr-2"></i> Save
+            </button>
+        </div>
+
+        <!-- Tool Selection -->
+        <div class="mb-6">
+            <h3 class="font-bold text-center text-lg text-gray-800 mb-3">Drawing Tool</h3>
+            <div id="tool-selector" class="flex justify-around items-end space-x-4">
+                <!-- Pen Tool -->
+                <div class="tool-icon selected" data-tool="pen" onclick="setTool('pen')">
+                    <i class="fas fa-pen text-2xl text-gray-600 mb-1"></i>
+                    <span class="text-xs font-medium text-gray-600">Pen</span>
+                </div>
+                <!-- Pencil Tool -->
+                <div class="tool-icon" data-tool="pencil" onclick="setTool('pencil')">
+                    <i class="fas fa-pencil-alt text-2xl text-gray-600 mb-1"></i>
+                    <span class="text-xs font-medium text-gray-600">Pencil</span>
+                </div>
+                <!-- Brush Tool -->
+                <div class="tool-icon" data-tool="brush" onclick="setTool('brush')">
+                    <i class="fas fa-paint-brush text-2xl text-gray-600 mb-1"></i>
+                    <span class="text-xs font-medium text-gray-600">Brush</span>
+                </div>
+                <!-- Eraser Tool -->
+                <div class="tool-icon" data-tool="eraser" onclick="setTool('eraser')">
+                    <i class="fas fa-eraser text-2xl text-gray-600 mb-1"></i>
+                    <span class="text-xs font-medium text-gray-600">Eraser</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Color Palette and Size Control -->
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-center pt-4 border-t border-gray-100">
+            
+            <div class="col-span-1 lg:col-span-3">
+                <h3 class="font-bold text-center text-lg text-gray-800 mb-3">Color Palette</h3>
+                <div id="color-palette" class="flex flex-wrap justify-center gap-2">
+                    <!-- Predefined Colors -->
+                    <div class="color-swatch selected" style="background-color: #3b82f6;" data-color="#3b82f6" onclick="selectColor('#3b82f6', this)"></div>
+                    <div class="color-swatch" style="background-color: #ef4444;" data-color="#ef4444" onclick="selectColor('#ef4444', this)"></div>
+                    <div class="color-swatch" style="background-color: #10b981;" data-color="#10b981" onclick="selectColor('#10b981', this)"></div>
+                    <div class="color-swatch" style="background-color: #f59e0b;" data-color="#f59e0b" onclick="selectColor('#f59e0b', this)"></div>
+                    <div class="color-swatch" style="background-color: #8b5cf6;" data-color="#8b5cf6" onclick="selectColor('#8b5cf6', this)"></div>
+                    <div class="color-swatch" style="background-color: #000000;" data-color="#000000" onclick="selectColor('#000000', this)"></div>
+                    <div class="color-swatch" style="background-color: #ffffff; border-color: #ccc;" data-color="#ffffff" onclick="selectColor('#ffffff', this)"></div>
+
+                    <!-- Custom Color Picker -->
+                    <div id="color-control" class="flex items-center ml-2">
+                        <input type="color" id="color-picker" value="#3b82f6" onchange="updateStrokeColor(this.value)" class="w-10 h-10 rounded-full border-2 border-gray-300 cursor-pointer">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Brush Size Slider -->
+            <div class="col-span-1 lg:col-span-2 flex flex-col items-center">
+                <label for="size-slider" class="font-bold text-lg text-gray-800 mb-2">
+                    Size: <span id="size-value">2</span>px
+                </label>
+                <input type="range" id="size-slider" min="1" max="50" value="2" oninput="updateStrokeSize(this.value)" class="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+            </div>
+        </div>
+    </div>
+    
+    <!-- Custom Modal for Notifications -->
+    <div id="notification-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full text-center">
+            <p id="modal-message" class="text-lg font-semibold text-gray-800 mb-4">Message</p>
+            <button onclick="hideModal()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">OK</button>
+        </div>
+    </div>
+
+<script>
+    // --- Global Configuration ---
+    const CANVAS_BACKGROUND = '#ffffff'; 
+    const DEFAULT_COLOR = '#3b82f6';
+
+    const TOOL_SETTINGS = {
+        // LineCap/LineJoin provide different visual strokes
+        'pen': { size: 3, lineCap: 'butt', lineJoin: 'bevel' },
+        'pencil': { size: 1, lineCap: 'round', lineJoin: 'round' },
+        'brush': { size: 18, lineCap: 'round', lineJoin: 'round' },
+        'eraser': { size: 25, lineCap: 'round', lineJoin: 'round' }
+    };
+
+    // --- State Variables ---
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    let currentTool = 'pen';
+    let currentStrokeColor = DEFAULT_COLOR; 
+    let currentStrokeSize = TOOL_SETTINGS['pen'].size;
+
+    // History for Undo/Redo
+    let history = [];
+    let historyIndex = -1;
+    const MAX_HISTORY_STEPS = 50;
+
+    // --- DOM and Canvas Setup ---
+    const canvas = document.getElementById('drawingCanvas');
+    const ctx = canvas.getContext('2d');
+    const modal = document.getElementById('notification-modal');
+    const modalMessage = document.getElementById('modal-message');
+    const sizeValueEl = document.getElementById('size-value');
+    const sizeSliderEl = document.getElementById('size-slider');
+    const colorPickerEl = document.getElementById('color-picker');
+    const colorControlEl = document.getElementById('color-control');
+    const undoButton = document.getElementById('undo-button');
+    const redoButton = document.getElementById('redo-button');
+    const toolIcons = document.querySelectorAll('.tool-icon');
+    const colorSwatches = document.querySelectorAll('.color-swatch');
+
+    // --- History Management (Undo/Redo) ---
+    
+    // Saves the current state of the canvas to the history stack
+    function saveState() {
+        if (historyIndex < history.length - 1) {
+            // Clear all future states if a new stroke is made
+            history = history.slice(0, historyIndex + 1);
+        }
+
+        // Only keep the last N steps to prevent memory overflow
+        if (history.length >= MAX_HISTORY_STEPS) {
+            history.shift(); // Remove the oldest state
+            historyIndex--;
+        }
+
+        history.push(canvas.toDataURL());
+        historyIndex++;
+        updateHistoryButtons();
+    }
+
+    // Restores a state from history
+    function restoreState() {
+        if (historyIndex >= 0 && historyIndex < history.length) {
+            const img = new Image();
+            img.onload = function() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Draw the image to scale
+                const scale = canvas.width / 600;
+                ctx.drawImage(img, 0, 0, 600 * scale, 600 * scale); 
+                updateHistoryButtons();
+            };
+            img.src = history[historyIndex];
+        } else {
+             // If history is empty, clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            updateHistoryButtons();
+        }
+    }
+
+    function undo() {
+        if (historyIndex > 0) {
+            historyIndex--;
+            restoreState();
+        }
+    }
+
+    function redo() {
+        if (historyIndex < history.length - 1) {
+            historyIndex++;
+            restoreState();
+        }
+    }
+
+    function updateHistoryButtons() {
+        undoButton.disabled = (historyIndex <= 0);
+        redoButton.disabled = (historyIndex >= history.length - 1);
+    }
+
+
+    // --- Utility Functions ---
+
+    function showModal(message) {
+        // Modal is now only used for essential feedback, not on every tool switch
+        // modalMessage.textContent = message;
+        // modal.classList.remove('hidden');
+    }
+
+    function hideModal() {
+        modal.classList.add('hidden');
+    }
+    
+    // --- Control Handlers ---
+
+    function selectColor(color, element) {
+        // 1. Deselect all swatches
+        colorSwatches.forEach(swatch => swatch.classList.remove('selected'));
+        // 2. Select the clicked swatch
+        element.classList.add('selected');
+
+        // 3. Update the color picker input value
+        colorPickerEl.value = color;
+        updateStrokeColor(color);
+        
+        // 4. Ensure tool is not eraser (and re-set tool if it was)
+        if (currentTool === 'eraser') {
+            setTool('pen'); // Switch back to pen if color is selected
+        }
+    }
+    
+    // Updates the size value display and the canvas context
+    function updateStrokeSize(size) {
+        currentStrokeSize = parseInt(size);
+        sizeValueEl.textContent = currentStrokeSize;
+        ctx.lineWidth = currentStrokeSize;
+    }
+    
+    // Updates the stroke color and the canvas context (used by color picker)
+    function updateStrokeColor(color) {
+        currentStrokeColor = color;
+        ctx.strokeStyle = currentStrokeColor;
+        
+        // Deselect swatches if color picker is used
+        colorSwatches.forEach(swatch => swatch.classList.remove('selected'));
+    }
+
+    // Main function to switch tools
+    function setTool(toolName) {
+        currentTool = toolName;
+        const settings = TOOL_SETTINGS[toolName];
+
+        // 1. Update visual selection
+        toolIcons.forEach(icon => {
+            icon.classList.toggle('selected', icon.getAttribute('data-tool') === toolName);
+        });
+
+        // 2. Adjust color settings based on tool
+        if (toolName === 'eraser') {
+            // Eraser uses CANVAS_BACKGROUND color
+            ctx.strokeStyle = CANVAS_BACKGROUND;
+            colorControlEl.style.opacity = '0.5';
+            colorControlEl.style.pointerEvents = 'none';
+        } else {
+            // Other tools use the selected color
+            ctx.strokeStyle = currentStrokeColor;
+            colorControlEl.style.opacity = '1';
+            colorControlEl.style.pointerEvents = 'auto';
+        }
+        
+        // 3. Apply specific tool settings (size, line caps)
+        sizeSliderEl.value = settings.size;
+        updateStrokeSize(settings.size); 
+        ctx.lineCap = settings.lineCap;
+        ctx.lineJoin = settings.lineJoin;
+    }
+
+    function clearCanvas() {
+        // Clear the entire canvas and save the empty state
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        history = [];
+        historyIndex = -1;
+        saveState(); 
+        showModal("Canvas cleared! Time for a new masterpiece.");
+    }
+
+    function saveDrawing() {
+        const imageURL = canvas.toDataURL("image/png");
+        const a = document.createElement('a');
+        a.href = imageURL;
+        a.download = `Kids_Studio_Artwork_${new Date().toISOString()}.png`;
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        showModal("Artwork saved successfully!");
+    }
+
+    // --- Drawing Logic ---
+
+    function draw(e) {
+        if (!isDrawing) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        let clientX, clientY;
+
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else { 
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+
+        const currentX = clientX - rect.left;
+        const currentY = clientY - rect.top;
+
+        // Ensure the context settings are correct for the current tool state
+        // Recalculate color in case of eraser/color picker updates
+        ctx.strokeStyle = (currentTool === 'eraser') ? CANVAS_BACKGROUND : currentStrokeColor;
+        ctx.lineWidth = currentStrokeSize;
+
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(currentX, currentY);
+        ctx.stroke();
+
+        [lastX, lastY] = [currentX, currentY];
+    }
+
+    function setPosition(e) {
+        isDrawing = true;
+        const rect = canvas.getBoundingClientRect();
+        let clientX, clientY;
+
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+        
+        [lastX, lastY] = [clientX - rect.left, clientY - rect.top];
+        e.preventDefault(); 
+    }
+
+    function stopDrawing() {
+        if (isDrawing) {
+            isDrawing = false;
+            // Save state only when the stroke is complete
+            saveState(); 
+        }
+        ctx.beginPath();
+    }
+
+    // --- Initialization & Resizing ---
+    
+    function resizeCanvas() {
+        // Max size set to 600x600 in HTML, use it for aspect ratio calculation
+        const MAX_SIZE = 600;
+        const size = Math.min(document.body.clientWidth - 40, MAX_SIZE);
+        
+        // Save state before resizing
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(canvas, 0, 0);
+
+        canvas.width = size;
+        canvas.height = size;
+        
+        // Restore state after resizing
+        ctx.drawImage(tempCanvas, 0, 0, size, size);
+
+        // Re-apply drawing settings
+        setTool(currentTool); 
+    }
+    window.addEventListener('resize', resizeCanvas);
+    
+    function initializeCanvas() {
+        setTool('pen'); 
+        resizeCanvas(); 
+        saveState(); // Save the initial empty state
+    }
+
+    // --- Event Listeners ---
+    canvas.addEventListener('mousedown', setPosition);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+
+    canvas.addEventListener('touchstart', setPosition);
+    canvas.addEventListener('touchmove', draw);
+    canvas.addEventListener('touchend', stopDrawing);
+
+    window.onload = initializeCanvas;
+</script>
+
+</body>
+</html>
