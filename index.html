@@ -204,7 +204,7 @@
     // यहाँ (नीचे दी गई लाइन में) आपको अपनी Gemini API Key डालनी है।
     // कृपया "YOUR_API_KEY_HERE" को हटाकर अपनी असली Key पेस्ट करें।
     // ------------------------------------------------------------------
-    const API_KEY = "YOUR_API_KEY_HERE"; 
+    const API_KEY = "AIzaSyAqzTp65Q8-zyOWDsDuzLUlWnzK2LUThgM"; 
 
     const CANVAS_BACKGROUND = '#ffffff'; 
     const DEFAULT_COLOR = '#3b82f6';
@@ -222,9 +222,9 @@
         { size: 400, display: "Small" },
         { size: 600, display: "Medium" },
         { size: 800, display: "Large" },
-        { size: 1000, display: "X-Large" }, // New size
-        { size: 1200, display: "XX-Large" }, // New size
-        { size: 1400, display: "Jumbo" } // New size
+        { size: 1000, display: "X-Large" }, 
+        { size: 1200, display: "XX-Large" }, 
+        { size: 1400, display: "Jumbo" } 
     ];
 
     // --- State Variables (Drawing) ---
@@ -235,7 +235,7 @@
     let currentStrokeColor = DEFAULT_COLOR; 
     let currentStrokeSize = TOOL_SETTINGS['pen'].size;
     let currentCanvasSizeIndex = 2; // Start at Large (800x800)
-    let isGridVisible = false; // NEW: State for grid visibility
+    let isGridVisible = false; // State for grid visibility
 
     let history = [];
     let historyIndex = -1;
@@ -253,7 +253,7 @@
     const undoButton = document.getElementById('undo-button');
     const redoButton = document.getElementById('redo-button');
     const solveButton = document.getElementById('solve-button');
-    const toggleGridButton = document.getElementById('toggle-grid-button'); // NEW: Grid button
+    const toggleGridButton = document.getElementById('toggle-grid-button'); 
     const canvasSizeDisplayEl = document.getElementById('canvas-size-display');
 
 
@@ -266,7 +266,6 @@
         for (let i = 0; i < retries; i++) {
             try {
                 const response = await fetch(url, options);
-                // 429 is "Too Many Requests" (throttle), we retry these
                 if (response.status !== 429) { 
                     return response;
                 }
@@ -370,7 +369,7 @@
 
 
     // ------------------------------------------------------------------
-    // --- GRID LOGIC (NEW) ---
+    // --- GRID LOGIC ---
     // ------------------------------------------------------------------
 
     function drawGrid() {
@@ -435,6 +434,14 @@
     // --- History Management (Undo/Redo) ---
     
     function saveState() {
+        // First, temporarily hide the grid if it's visible, so it doesn't get saved into the history image.
+        const gridStateBeforeSave = isGridVisible;
+        if (gridStateBeforeSave) {
+            isGridVisible = false;
+            // Draw content without grid to history (requires a full restore operation)
+            restoreState(false); // Restore without calling drawGrid
+        }
+
         if (historyIndex < history.length - 1) {
             history = history.slice(0, historyIndex + 1);
         }
@@ -444,16 +451,20 @@
             historyIndex--;
         }
 
-        // The image data saved here should only contain the drawing strokes (no grid)
-        // NOTE: If the grid is visible, it will be saved in history and cause double lines on undo/redo. 
-        // A more complex solution is needed to separate drawing and grid layers.
         history.push(canvas.toDataURL());
         historyIndex++;
+
+        // Restore grid state if it was visible
+        if (gridStateBeforeSave) {
+            isGridVisible = true;
+            drawGrid(); // Redraw grid on top of the saved state
+        }
+        
         updateHistoryButtons();
     }
 
-    // FIX: Refactored to ensure synchronous clear for bug fix.
-    function restoreState() {
+    // New signature: restoreState(shouldDrawGrid = true)
+    function restoreState(shouldDrawGrid = true) {
         // 1. Synchronously clear the entire canvas state (removes visible grid and content immediately)
         ctx.clearRect(0, 0, canvas.width, canvas.height); 
         
@@ -462,14 +473,18 @@
             img.onload = function() {
                 // 2. Draw the actual content from history (content only)
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
-                // 3. Draw the grid on top (if visible). drawGrid checks isGridVisible.
-                drawGrid(); 
+                // 3. Draw the grid on top (if visible), only if requested
+                if (shouldDrawGrid) {
+                    drawGrid(); 
+                }
                 updateHistoryButtons();
             };
             img.src = history[historyIndex];
         } else {
             // If history is empty, canvas is already cleared. Just draw grid if needed.
-            drawGrid(); 
+            if (shouldDrawGrid) {
+                drawGrid(); 
+            }
             updateHistoryButtons();
         }
     }
@@ -560,8 +575,7 @@
         const gridStateBeforeSave = isGridVisible;
         if (gridStateBeforeSave) {
             isGridVisible = false;
-            // Restore content to hide grid lines (which aren't saved in history)
-            restoreState(); 
+            restoreState(false); // Restore content without drawing grid
         }
 
         const imageURL = canvas.toDataURL("image/png");
@@ -601,14 +615,8 @@
         const currentX = clientX - rect.left;
         const currentY = clientY - rect.top;
 
-        // BUG FIX: Removed the call to restoreState() here. 
-        // Calling restoreState() on every mouse move was clearing the canvas and reloading 
-        // the history asynchronously, which immediately overwrote the new stroke segment.
-        /*
-        if (isGridVisible) {
-             restoreState();
-        }
-        */
+        // FIX CONFIRMED: No restoreState() call here.
+        // Drawing happens normally, even with the grid visible.
 
         ctx.strokeStyle = (currentTool === 'eraser') ? CANVAS_BACKGROUND : currentStrokeColor;
         ctx.lineWidth = currentStrokeSize;
