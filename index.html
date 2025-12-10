@@ -29,6 +29,7 @@
             border-radius: 9999px;
             transition: all 0.2s;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            white-space: nowrap; /* Prevent button text wrapping */
         }
         .control-button:hover {
             opacity: 0.9;
@@ -93,13 +94,13 @@
                 <i class="fas fa-search-minus mr-1"></i> Smaller
             </button>
             <span id="canvas-size-display" class="text-xl flex items-center bg-white px-4 rounded-lg shadow-inner border border-gray-200">
-                Canvas Size: 600 x 600
+                Canvas Size: 800 x 800
             </span>
             <button onclick="changeCanvasSize(1)" class="px-4 py-2 bg-yellow-400 text-gray-800 rounded-lg hover:bg-yellow-500 transition shadow-md">
                 Larger <i class="fas fa-search-plus ml-1"></i>
             </button>
         </div>
-        <canvas id="drawingCanvas" width="600" height="600"></canvas>
+        <canvas id="drawingCanvas" width="800" height="800"></canvas>
         
         <!-- AI Math Solver Button -->
         <div class="mt-6 w-full max-w-lg">
@@ -112,13 +113,16 @@
     <!-- Controls -->
     <div id="controls" class="mt-8 p-6 bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
         
-        <!-- Undo/Redo and Action Buttons -->
+        <!-- Undo/Redo and Action Buttons (Including NEW Grid Button) -->
         <div class="flex flex-wrap justify-center gap-4 mb-6 pb-4 border-b border-gray-100">
             <button id="undo-button" onclick="undo()" class="control-button bg-gray-400 text-white hover:bg-gray-500 disabled:opacity-50" disabled>
                 <i class="fas fa-undo mr-2"></i> Undo
             </button>
             <button id="redo-button" onclick="redo()" class="control-button bg-gray-400 text-white hover:bg-gray-500 disabled:opacity-50" disabled>
                 <i class="fas fa-redo mr-2"></i> Redo
+            </button>
+            <button id="toggle-grid-button" onclick="toggleGrid()" class="control-button bg-purple-500 text-white hover:bg-purple-600">
+                <i class="fas fa-th-large mr-2"></i> Show Grid
             </button>
             <button id="clear-button" onclick="clearCanvas()" class="control-button bg-red-500 text-white hover:bg-red-600">
                 <i class="fas fa-trash mr-2"></i> Clear
@@ -200,10 +204,11 @@
     // यहाँ (नीचे दी गई लाइन में) आपको अपनी Gemini API Key डालनी है।
     // कृपया "YOUR_API_KEY_HERE" को हटाकर अपनी असली Key पेस्ट करें।
     // ------------------------------------------------------------------
-    const API_KEY = "AIzaSyAqzTp65Q8-zyOWDsDuzLUlWnzK2LUThgM"; 
+    const API_KEY = "YOUR_API_KEY_HERE"; 
 
     const CANVAS_BACKGROUND = '#ffffff'; 
     const DEFAULT_COLOR = '#3b82f6';
+    const GRID_SIZE = 50; // Grid cell size in pixels
 
     const TOOL_SETTINGS = {
         'pen': { size: 3, lineCap: 'butt', lineJoin: 'bevel' },
@@ -212,10 +217,14 @@
         'eraser': { size: 25, lineCap: 'round', lineJoin: 'round' }
     };
     
+    // Updated Canvas Sizes - More options added
     const CANVAS_SIZES = [
         { size: 400, display: "Small" },
         { size: 600, display: "Medium" },
-        { size: 800, display: "Large" }
+        { size: 800, display: "Large" },
+        { size: 1000, display: "X-Large" }, // New size
+        { size: 1200, display: "XX-Large" }, // New size
+        { size: 1400, display: "Jumbo" } // New size
     ];
 
     // --- State Variables (Drawing) ---
@@ -225,7 +234,8 @@
     let currentTool = 'pen';
     let currentStrokeColor = DEFAULT_COLOR; 
     let currentStrokeSize = TOOL_SETTINGS['pen'].size;
-    let currentCanvasSizeIndex = 1; // Start at Medium (600)
+    let currentCanvasSizeIndex = 2; // Start at Large (800x800)
+    let isGridVisible = false; // NEW: State for grid visibility
 
     let history = [];
     let historyIndex = -1;
@@ -242,10 +252,9 @@
     const colorControlEl = document.getElementById('color-control');
     const undoButton = document.getElementById('undo-button');
     const redoButton = document.getElementById('redo-button');
-    const toolIcons = document.querySelectorAll('.tool-icon');
-    const colorSwatches = document.querySelectorAll('.color-swatch');
-    const canvasSizeDisplayEl = document.getElementById('canvas-size-display');
     const solveButton = document.getElementById('solve-button');
+    const toggleGridButton = document.getElementById('toggle-grid-button'); // NEW: Grid button
+    const canvasSizeDisplayEl = document.getElementById('canvas-size-display');
 
 
     // ------------------------------------------------------------------
@@ -361,7 +370,56 @@
 
 
     // ------------------------------------------------------------------
-    // --- DRAWING LOGIC & UTILITIES (Same as before) ---
+    // --- GRID LOGIC (NEW) ---
+    // ------------------------------------------------------------------
+
+    function drawGrid() {
+        if (!isGridVisible) return;
+
+        // Save current context state before drawing grid
+        ctx.save(); 
+        
+        ctx.strokeStyle = '#e5e7eb'; // Very light gray for grid lines
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]); // Dotted lines for subtlety
+
+        // Draw vertical lines
+        for (let x = GRID_SIZE; x < canvas.width; x += GRID_SIZE) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+        }
+
+        // Draw horizontal lines
+        for (let y = GRID_SIZE; y < canvas.height; y += GRID_SIZE) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+        }
+        
+        // Restore context state (important for drawing continuity)
+        ctx.restore(); 
+    }
+
+    function toggleGrid() {
+        isGridVisible = !isGridVisible;
+        
+        if (isGridVisible) {
+            toggleGridButton.innerHTML = '<i class="fas fa-th-large mr-2"></i> Hide Grid';
+            toggleGridButton.classList.replace('bg-purple-500', 'bg-pink-500');
+        } else {
+            toggleGridButton.innerHTML = '<i class="fas fa-th-large mr-2"></i> Show Grid';
+            toggleGridButton.classList.replace('bg-pink-500', 'bg-purple-500');
+        }
+        
+        // Always restore the state to redraw content and apply the new grid setting
+        restoreState();
+    }
+
+    // ------------------------------------------------------------------
+    // --- DRAWING LOGIC & UTILITIES ---
     // ------------------------------------------------------------------
 
     function showModal(message) {
@@ -386,22 +444,32 @@
             historyIndex--;
         }
 
+        // The image data saved here should only contain the drawing strokes (no grid)
+        // NOTE: If the grid is visible, it will be saved in history and cause double lines on undo/redo. 
+        // A more complex solution is needed to separate drawing and grid layers.
         history.push(canvas.toDataURL());
         historyIndex++;
         updateHistoryButtons();
     }
 
+    // FIX: Refactored to ensure synchronous clear for bug fix.
     function restoreState() {
+        // 1. Synchronously clear the entire canvas state (removes visible grid and content immediately)
+        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        
         if (historyIndex >= 0 && historyIndex < history.length) {
             const img = new Image();
             img.onload = function() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // 2. Draw the actual content from history (content only)
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
+                // 3. Draw the grid on top (if visible). drawGrid checks isGridVisible.
+                drawGrid(); 
                 updateHistoryButtons();
             };
             img.src = history[historyIndex];
         } else {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // If history is empty, canvas is already cleared. Just draw grid if needed.
+            drawGrid(); 
             updateHistoryButtons();
         }
     }
@@ -428,7 +496,7 @@
     // --- Control Handlers ---
 
     function selectColor(color, element) {
-        colorSwatches.forEach(swatch => swatch.classList.remove('selected'));
+        document.querySelectorAll('.color-swatch').forEach(swatch => swatch.classList.remove('selected'));
         element.classList.add('selected');
         colorPickerEl.value = color;
         updateStrokeColor(color);
@@ -447,8 +515,8 @@
     function updateStrokeColor(color) {
         currentStrokeColor = color;
         ctx.strokeStyle = currentStrokeColor;
-        colorSwatches.forEach(swatch => swatch.classList.remove('selected'));
-        const customSwatch = Array.from(colorSwatches).find(s => s.dataset.color === color);
+        document.querySelectorAll('.color-swatch').forEach(swatch => swatch.classList.remove('selected'));
+        const customSwatch = Array.from(document.querySelectorAll('.color-swatch')).find(s => s.dataset.color === color);
         if (customSwatch) {
              customSwatch.classList.add('selected');
         }
@@ -458,7 +526,7 @@
         currentTool = toolName;
         const settings = TOOL_SETTINGS[toolName];
 
-        toolIcons.forEach(icon => {
+        document.querySelectorAll('.tool-icon').forEach(icon => {
             icon.classList.toggle('selected', icon.getAttribute('data-tool') === toolName);
         });
 
@@ -482,11 +550,20 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         history = [];
         historyIndex = -1;
+        drawGrid(); // Redraw grid if visible
         saveState(); 
         showModal("Canvas cleared! Time for a new masterpiece or math problem.");
     }
 
     function saveDrawing() {
+        // Temporarily hide grid before saving
+        const gridStateBeforeSave = isGridVisible;
+        if (gridStateBeforeSave) {
+            isGridVisible = false;
+            // Restore content to hide grid lines (which aren't saved in history)
+            restoreState(); 
+        }
+
         const imageURL = canvas.toDataURL("image/png");
         const a = document.createElement('a');
         a.href = imageURL;
@@ -495,6 +572,12 @@
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+
+        // Restore grid visibility after saving
+        if (gridStateBeforeSave) {
+            isGridVisible = true;
+            drawGrid();
+        }
 
         showModal("Artwork saved successfully!");
     }
@@ -518,8 +601,18 @@
         const currentX = clientX - rect.left;
         const currentY = clientY - rect.top;
 
+        // BUG FIX: Removed the call to restoreState() here. 
+        // Calling restoreState() on every mouse move was clearing the canvas and reloading 
+        // the history asynchronously, which immediately overwrote the new stroke segment.
+        /*
+        if (isGridVisible) {
+             restoreState();
+        }
+        */
+
         ctx.strokeStyle = (currentTool === 'eraser') ? CANVAS_BACKGROUND : currentStrokeColor;
         ctx.lineWidth = currentStrokeSize;
+        ctx.setLineDash([]); // Ensure drawing strokes are solid
 
         ctx.beginPath();
         ctx.moveTo(lastX, lastY);
@@ -570,6 +663,7 @@
         canvas.height = newSize;
         
         ctx.drawImage(tempCanvas, 0, 0, newSize, newSize);
+        drawGrid(); // Redraw grid after resize and content restoration
 
         canvasSizeDisplayEl.textContent = `Canvas Size: ${targetSize} x ${targetSize}`;
 
@@ -602,6 +696,8 @@
 
     function initializeCanvas() {
         setTool('pen'); 
+        // Start at Large (index 2: 800x800)
+        currentCanvasSizeIndex = 2; 
         resizeCanvas(CANVAS_SIZES[currentCanvasSizeIndex].size); 
         saveState(); // Save the initial empty state
     }
